@@ -299,7 +299,7 @@ uint16_t checkInterface() {
 	if((changes & BUTTON_LONG_PRESS) && !bankChangeMode) {
 		D(Serial.println("Enter bank change mode"););
 		bankChangeMode = true;
-    interface.setChannelCount(fileScanner.lastBankIndex);
+    interface.setChannelCount(fileScanner.lastBankIndex+1);
 		//nextBank();
 //		ledFlashTimer = 0;
     } else if ((changes & BUTTON_LONG_PRESS) && bankChangeMode) {

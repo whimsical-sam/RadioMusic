@@ -1,40 +1,40 @@
 /*
  RADIO MUSIC
  https://github.com/TomWhitwell/RadioMusic
- 
+
  Audio out: Onboard DAC, teensy3.1 pin A14/DAC
- 
+
  Bank Button: 2
  Bank LEDs 3,4,5,6
- Reset Button: 8  
- Reset LED 11 
- Reset CV input: 9 
- Channel Pot: A9 
- Channel CV: A8 // check 
- Time Pot: A7 
- Time CV: A6 // check 
- SD Card Connections: 
+ Reset Button: 8
+ Reset LED 11
+ Reset CV input: 9
+ Channel Pot: A9
+ Channel CV: A8 // check
+ Time Pot: A7
+ Time CV: A6 // check
+ SD Card Connections:
  SCLK 14
  MISO 12
- MOSI 7 
- SS   10 
- 
- NB: Compile using modified versions of: 
- SD.cpp (found in the main Arduino package) 
- play_sd_raw.cpp  - In Teensy Audio Library 
- play_sc_raw.h    - In Teensy Audio Library 
- 
+ MOSI 7
+ SS   10
+
+ NB: Compile using modified versions of:
+ SD.cpp (found in the main Arduino package)
+ play_sd_raw.cpp  - In Teensy Audio Library
+ play_sc_raw.h    - In Teensy Audio Library
+
  from:https://github.com/TomWhitwell/RadioMusic/tree/master/Collateral/Edited%20teensy%20files
 
  Additions and changes:
- 2016 by Jouni Stenroos - jouni.stenroos@iki.fi 
+ 2016 by Jouni Stenroos - jouni.stenroos@iki.fi
  - New bank change mode
  - Removing 330 file limit
  - Improving reset
  - File sorting
  - Audio crossfade
  - Some refactoring and organization of code.
- 
+
  */
 #include <EEPROM.h>
 #include <SPI.h>
@@ -223,8 +223,8 @@ void loop() {
 		Serial.println("Audio Engine errors. Reboot");
 		reBoot(0);
 	}
-
-	if (playState.channelChanged) {
+  // load in new audio file or bank & audio file
+	if (playState.channelChanged && !bankChangeMode) {
 		D(
 		Serial.print("RM: Going to next channel : ");
 		if(playState.channelChanged) Serial.print("RM: Channel Changed. ");
@@ -254,10 +254,12 @@ void updateDisplay(uint16_t changes) {
 	if (showDisplay > SHOWFREQ) {
 		showDisplay = 0;
 	}
+
+  // this should show playstate.nextBank
 	if (bankChangeMode) {
 		ledControl.showReset(1);// Reset led is on continuously when in bank change mode..
 		if(!flashLeds) {
-			ledControl.multi(playState.bank);
+			ledControl.multi(playState.nextBank);
 		}
 
 	} else {
@@ -290,22 +292,32 @@ uint16_t checkInterface() {
 	#endif
 
 	// BANK MODE HANDLING
+  // TODO: Setup a "cued" bank
+  // lights adjust to reflect bank pointed to by channel pot
+  // bank loaded when button released
+  // channel determined by??
 	if((changes & BUTTON_LONG_PRESS) && !bankChangeMode) {
 		D(Serial.println("Enter bank change mode"););
 		bankChangeMode = true;
-		nextBank();
+    interface.setChannelCount(fileScanner.lastBankIndex);
+		//nextBank();
 //		ledFlashTimer = 0;
-	} else if((changes & BUTTON_LONG_RELEASE) && bankChangeMode) {
-		D(Serial.println("Exit bank change mode"););
-		flashLeds = false;
-		bankChangeMode = false;
-	}
+    } else if ((changes & BUTTON_LONG_PRESS) && bankChangeMode) {
+      cueBank();
+    } else if((changes & BUTTON_LONG_RELEASE) && bankChangeMode) {
+
+
+      D(Serial.println("Exit bank change mode"););
+      loadNextBank();
+  		flashLeds = false;
+  		bankChangeMode = false;
+    }
 
 	if(changes & BUTTON_PULSE) {
 //		flashLeds = false;
 		if(bankChangeMode) {
 			D(Serial.println("BUTTON PULSE"););
-			nextBank();
+			//nextBank();
 		} else {
 			D(Serial.println("Button Pulse but not in bank mode"););
 		}
@@ -363,6 +375,36 @@ void doSpeedChange() {
 	speed = pow(2,speed / 12);
 
 	audioEngine.setPlaybackSpeed(speed);
+}
+
+void cueBank() {
+  if(fileScanner.lastBankIndex == 0) {
+    D(Serial.println("Only 1 bank."););
+    return;
+  }
+
+  playState.nextBank = constrain(playState.nextChannel, 0, fileScanner.lastBankIndex);
+  while (fileScanner.numFilesInBank[playState.nextBank] == 0) {
+		D(Serial.print("No file in bank ");Serial.println(playState.bank););
+    playState.nextBank+=1;
+    if (playState.nextBank > fileScanner.lastBankIndex) playState.nextBank = 0;
+	}
+}
+
+void loadNextBank() {
+  playState.bank = playState.nextBank;
+  interface.setChannelCount(fileScanner.numFilesInBank[playState.bank]);
+
+  playState.nextChannel = 0;
+  playState.channelChanged = true;
+
+  D(
+    Serial.print("RM: Next Bank ");
+    Serial.println(playState.bank);
+  );
+
+  meterDisplayDelayTimer = 0;
+  EEPROM.write(EEPROM_BANK_SAVE_ADDRESS, playState.bank);
 }
 
 void nextBank() {
@@ -430,4 +472,3 @@ void peakMeter() {
 	ledControl.multi(monoPeak - 1);
 	peakDisplayTimer = 0;
 }
-
